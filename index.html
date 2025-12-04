@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suivi Recharge Compteur Électricité Cloud</title>
+    <!-- Utilisation de Tailwind CSS pour la modernisation du style -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Styles de base adaptés de style.css et convertis pour Tailwind */
+        :root {
+            --primary-color: #3b82f6; /* Blue-500 */
+            --secondary-color: #10b981; /* Emerald-500 */
+            --danger-color: #ef4444; /* Red-500 */
+            --background-color: #f3f4f6; /* Gray-100 */
+            --card-background: #ffffff;
+            --text-color: #1f2937; /* Gray-800 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 15px;
+            display: grid;
+            gap: 20px;
+        }
+        .card {
+            background-color: var(--card-background);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 24px;
+        }
+        /* Style des tables pour une meilleure lisibilité */
+        th {
+            background-color: var(--primary-color) !important;
+        }
+        #historiqueTable th {
+            font-size: 0.85rem;
+        }
+        /* Responsive Grid Layout */
+        @media (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 2fr;
+                grid-template-areas: 
+                    "form bilans"
+                    "historique historique"
+                    "reset reset";
+            }
+            .recharge-form-section { grid-area: form; }
+            .bilans-section { 
+                grid-area: bilans; 
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }
+            .historique-section { grid-area: historique; }
+            .reset-section { grid-area: reset; }
+        }
+        @media (min-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr 1fr 1fr;
+                grid-template-areas: 
+                    "form mensuel annuel"
+                    "historique historique historique"
+                    "reset reset reset";
+            }
+            .bilans-section { 
+                display: contents;
+            }
+            .bilan-mensuel { grid-area: mensuel; }
+            .bilan-annuel { grid-area: annuel; }
+        }
+        /* Custom modal styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="bg-blue-600 text-white p-5 text-center shadow-lg">
+        <h1 class="text-3xl font-bold">⚡ Suivi des Recharges Électriques (Cloud)</h1>
+        <p class="text-sm mt-1">ID Utilisateur : <span id="userIdDisplay" class="font-mono text-yellow-300">Connexion...</span></p>
+    </header>
+
+    <main class="container">
+        
+        <!-- Formulaire de Recharge -->
+        <section class="card recharge-form-section">
+            <h2 class="text-2xl font-semibold text-blue-600 mb-4">🛒 <span id="formTitle">Enregistrer</span> une Recharge</h2>
+            <form id="rechargeForm" class="space-y-4">
+                <input type="hidden" id="rechargeId" value=""> 
+
+                <div class="form-group">
+                    <label for="montant" class="block text-sm font-medium text-gray-700">Montant (FCFA) :</label>
+                    <input type="number" id="montant" required min="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-3 focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <div class="form-group">
+                    <label for="dateAchat" class="block text-sm font-medium text-gray-700">Date de l'Achat :</label>
+                    <input type="date" id="dateAchat" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-3 focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <div class="form-group flex items-center space-x-2">
+                    <input type="checkbox" id="isFirstRecharge" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="isFirstRecharge" class="text-sm font-normal text-gray-700">Ceci est la **première** recharge du mois (frais appliqués)</label>
+                </div>
+                
+                <button type="submit" class="w-full py-3 px-4 rounded-lg font-bold transition duration-150 shadow-md bg-emerald-500 text-white hover:bg-emerald-600" id="submitBtn">Enregistrer la Recharge</button>
+            </form>
+        </section>
+
+        <!-- Bilans -->
+        <section class="bilan-mensuel card">
+            <h3 class="text-xl font-semibold text-emerald-600 mb-4">Mois en Cours (<span id="currentMonthName"></span>)</h3>
+            <div class="grid grid-cols-2 gap-4 text-center">
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="text-sm text-gray-500">Montant Total Achat</p>
+                    <strong id="totalMontantMensuel" class="text-2xl font-extrabold text-blue-600 mt-1 block">0 FCFA</strong>
+                </div>
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="text-sm text-gray-500">Recharge Totale (kWh)</p>
+                    <strong id="totalKwhMensuel" class="text-2xl font-extrabold text-blue-600 mt-1 block">0.00 kWh</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="bilan-annuel card">
+            <h3 class="text-xl font-semibold text-blue-600 mb-4">Bilan Annuel (kWh)</h3>
+            <div class="max-h-72 overflow-y-auto">
+                <table id="bilanAnnuelTable" class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-white uppercase tracking-wider rounded-tl-lg">Mois</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-white uppercase tracking-wider rounded-tr-lg">Total Recharge (kWh)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bilanAnnuelTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Historique -->
+        <section class="card historique-section">
+            <h2 class="text-2xl font-semibold text-blue-600 mb-4">📜 Historique des Recharges</h2>
+            <div class="overflow-x-auto">
+                <table id="historiqueTable" class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-white uppercase tracking-wider">Date</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-white uppercase tracking-wider">Montant (FCFA)</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-white uppercase tracking-wider">Recharge (KWh)</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-white uppercase tracking-wider">Type</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-white uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rechargesList" class="bg-white divide-y divide-gray-200">
+                        <tr><td colspan="5" class="text-center py-4 text-gray-500">Chargement des données...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Réinitialisation -->
+        <section class="reset-section">
+             <button id="resetData" class="py-3 px-6 rounded-lg font-bold transition duration-150 shadow-md bg-red-600 text-white hover:bg-red-700">Réinitialiser Toutes les Données</button>
+             <p class="text-red-500 text-sm mt-3">Attention : Cette action est irréversible et effacera toutes les données stockées pour cet utilisateur.</p>
+        </section>
+
+    </main>
+    
+    <!-- Modal de confirmation générique -->
+    <div id="genericModal" class="modal">
+        <div class="modal-content">
+            <p id="modalMessage" class="mb-6 text-lg font-semibold"></p>
+            <div id="modalActions" class="flex justify-center space-x-4">
+                <button id="modalConfirmBtn" class="py-2 px-4 rounded-md font-semibold text-white bg-red-600 hover:bg-red-700">Confirmer</button>
+                <button id="modalCancelBtn" class="py-2 px-4 rounded-md font-semibold text-gray-700 bg-gray-200 hover:bg-gray-300">Annuler</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal d'Alerte simple -->
+    <div id="alertModal" class="modal">
+        <div class="modal-content">
+            <p id="alertMessage" class="mb-6 text-lg font-semibold"></p>
+            <button id="alertCloseBtn" class="py-2 px-4 rounded-md font-semibold text-white bg-blue-600 hover:bg-blue-700">OK</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Importations Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Activer le logging pour le debug
+        // setLogLevel('debug');
+
+        // --- Configuration Firebase Globale ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db = null;
+        let auth = null;
+        let userId = null;
+        let isAuthReady = false;
+
+        // --- Constantes et Configuration Métier ---
+        const TAUX_KWH = 93.45;
+        const FRAIS_PREMIERE_RECHARGE = 4.5;
+        const COLLECTION_NAME = 'recharges';
+
+        // --- Éléments du DOM ---
+        const rechargeForm = document.getElementById('rechargeForm');
+        const rechargeIdInput = document.getElementById('rechargeId');
+        const montantInput = document.getElementById('montant');
+        const dateAchatInput = document.getElementById('dateAchat');
+        const isFirstRechargeCheckbox = document.getElementById('isFirstRecharge');
+        const submitBtn = document.getElementById('submitBtn');
+        const formTitle = document.getElementById('formTitle');
+        const rechargesList = document.getElementById('rechargesList');
+        const resetDataButton = document.getElementById('resetData');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+
+        // Bilans
+        const currentMonthNameEl = document.getElementById('currentMonthName');
+        const totalMontantMensuelEl = document.getElementById('totalMontantMensuel');
+        const totalKwhMensuelEl = document.getElementById('totalKwhMensuel');
+        const bilanAnnuelTableBody = document.getElementById('bilanAnnuelTableBody');
+
+        // Modals
+        const genericModal = document.getElementById('genericModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const alertModal = document.getElementById('alertModal');
+        const alertMessage = document.getElementById('alertMessage');
+        const alertCloseBtn = document.getElementById('alertCloseBtn');
+
+
+        // --- Fonctions d'Utilité UI ---
+
+        /**
+         * Affiche un modal de confirmation personnalisé.
+         * @param {string} message - Message à afficher.
+         * @returns {Promise<boolean>} Résout à true si confirmé, false sinon.
+         */
+        function showConfirmModal(message) {
+            return new Promise(resolve => {
+                modalMessage.textContent = message;
+                genericModal.style.display = 'flex';
+
+                const onConfirm = () => {
+                    genericModal.style.display = 'none';
+                    modalConfirmBtn.removeEventListener('click', onConfirm);
+                    modalCancelBtn.removeEventListener('click', onCancel);
+                    resolve(true);
+                };
+
+                const onCancel = () => {
+                    genericModal.style.display = 'none';
+                    modalConfirmBtn.removeEventListener('click', onConfirm);
+                    modalCancelBtn.removeEventListener('click', onCancel);
+                    resolve(false);
+                };
+
+                modalConfirmBtn.addEventListener('click', onConfirm);
+                modalCancelBtn.addEventListener('click', onCancel);
+            });
+        }
+        
+        /**
+         * Affiche un modal d'alerte personnalisé.
+         * @param {string} message - Message à afficher.
+         */
+        function showAlert(message) {
+             alertMessage.textContent = message;
+             alertModal.style.display = 'flex';
+             alertCloseBtn.onclick = () => {
+                 alertModal.style.display = 'none';
+             };
+        }
+
+
+        // --- Logique de Calcul Simplifiée ---
+
+        /**
+         * Calcule la quantité de KWh rechargée selon les règles métier.
+         * @param {number} montant - Le montant de l'achat en FCFA.
+         * @param {boolean} isFirst - Vrai si c'est la première recharge du mois (applique les frais).
+         * @returns {number} La quantité de KWh.
+         */
+        function calculerRecharge(montant, isFirst) {
+            const kwhBrut = montant / TAUX_KWH;
+            let kwhNet;
+
+            if (isFirst) {
+                // Formule pour la 1ère recharge du mois
+                kwhNet = kwhBrut - FRAIS_PREMIERE_RECHARGE;
+            } else {
+                // Formule pour les recharges suivantes
+                kwhNet = kwhBrut;
+            }
+
+            // Assure que la valeur n'est jamais négative
+            return Math.max(0, parseFloat(kwhNet.toFixed(2))); 
+        }
+
+        // --- Gestion des Données Firestore ---
+
+        /**
+         * Référence à la collection privée de l'utilisateur.
+         */
+        function getCollectionRef() {
+            // Chemin: /artifacts/{appId}/users/{userId}/recharges
+            if (!db || !userId) return null;
+            return collection(db, 'artifacts', appId, 'users', userId, COLLECTION_NAME);
+        }
+
+        /**
+         * Met à jour l'interface utilisateur (Historique, Bilans)
+         * @param {Array<Object>} recharges - Liste des recharges triées.
+         */
+        function mettreAJourUI(recharges) {
+            afficherRecharges(recharges);
+            afficherBilanMensuel(recharges);
+            afficherBilanAnnuel(recharges);
+        }
+
+        // --- Fonctions de Rendu (Affichage) ---
+
+        /**
+         * Affiche la liste des recharges dans le tableau.
+         * @param {Array<Object>} recharges - Liste des recharges.
+         */
+        function afficherRecharges(recharges) {
+            rechargesList.innerHTML = ''; 
+
+            if (recharges.length === 0) {
+                rechargesList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Aucune recharge enregistrée.</td></tr>';
+                return;
+            }
+
+            recharges.forEach(recharge => {
+                const row = rechargesList.insertRow();
+                row.classList.add('hover:bg-gray-50');
+
+                // Utiliser la propriété `id` de Firestore comme `docId`
+                const docId = recharge.id; 
+                
+                // Ajout T00:00:00 pour éviter décalage UTC
+                const dateObj = new Date(recharge.date + 'T00:00:00'); 
+                const dateLisible = dateObj.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
+
+                row.insertCell().textContent = dateLisible;
+                row.insertCell().textContent = `${recharge.montant.toLocaleString('fr-FR')} FCFA`;
+                row.insertCell().textContent = `${recharge.kwh.toFixed(2)} kWh`;
+                row.insertCell().innerHTML = recharge.isFirst ? '<span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Première</span>' : 'Standard';
+                
+                const actionCell = row.insertCell();
+                actionCell.classList.add('flex', 'space-x-2', 'py-3');
+                
+                // Bouton Modifier
+                const editBtn = document.createElement('button');
+                editBtn.classList.add('text-blue-500', 'hover:text-blue-700', 'transition', 'p-1');
+                editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>';
+                editBtn.title = 'Modifier cette recharge';
+                editBtn.onclick = () => modifierRecharge(docId, recharge);
+                actionCell.appendChild(editBtn);
+
+                // Bouton Supprimer
+                const deleteBtn = document.createElement('button');
+                deleteBtn.classList.add('text-red-500', 'hover:text-red-700', 'transition', 'p-1');
+                deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>';
+                deleteBtn.title = 'Supprimer cette recharge';
+                deleteBtn.onclick = () => supprimerRecharge(docId);
+                actionCell.appendChild(deleteBtn);
+            });
+        }
+
+        /**
+         * Affiche le bilan du mois en cours.
+         * @param {Array<Object>} recharges - Liste des recharges.
+         */
+        function afficherBilanMensuel(recharges) {
+            const aujourdHui = new Date();
+            const moisActuel = aujourdHui.getMonth();
+            const anneeActuelle = aujourdHui.getFullYear();
+
+            currentMonthNameEl.textContent = aujourdHui.toLocaleDateString('fr-FR', { month: 'long' });
+
+            const rechargesMois = recharges.filter(r => {
+                const rDate = new Date(r.date + 'T00:00:00');
+                return rDate.getMonth() === moisActuel && rDate.getFullYear() === anneeActuelle;
+            });
+
+            const totalMontant = rechargesMois.reduce((sum, r) => sum + r.montant, 0);
+            const totalKwh = rechargesMois.reduce((sum, r) => sum + r.kwh, 0);
+
+            totalMontantMensuelEl.textContent = `${totalMontant.toLocaleString('fr-FR')} FCFA`;
+            totalKwhMensuelEl.textContent = `${totalKwh.toFixed(2)} kWh`;
+        }
+
+        /**
+         * Affiche le bilan annuel par mois.
+         * @param {Array<Object>} recharges - Liste des recharges.
+         */
+        function afficherBilanAnnuel(recharges) {
+            bilanAnnuelTableBody.innerHTML = '';
+
+            const bilanParMois = {};
+            const anneeActuelle = new Date().getFullYear();
+
+            recharges.forEach(r => {
+                const rDate = new Date(r.date + 'T00:00:00');
+                if (rDate.getFullYear() === anneeActuelle) {
+                    const anneeMois = rDate.getMonth(); // 0 à 11
+                    if (!bilanParMois[anneeMois]) {
+                        bilanParMois[anneeMois] = { totalKwh: 0 };
+                    }
+                    bilanParMois[anneeMois].totalKwh += r.kwh;
+                }
+            });
+
+            // Générer les lignes du tableau pour chaque mois de l'année
+            for (let i = 0; i < 12; i++) {
+                const dateRef = new Date(anneeActuelle, i, 1);
+                const nomMois = dateRef.toLocaleDateString('fr-FR', { month: 'long' });
+                
+                const kwhTotal = bilanParMois[i] ? bilanParMois[i].totalKwh : 0;
+                
+                const row = bilanAnnuelTableBody.insertRow();
+                row.classList.add('text-sm');
+                row.insertCell().textContent = nomMois.charAt(0).toUpperCase() + nomMois.slice(1);
+                row.insertCell().textContent = `${kwhTotal.toFixed(2)} kWh`;
+            }
+        }
+
+
+        // --- Fonctions d'Action Firestore ---
+
+        /**
+         * Prépare le formulaire pour modifier un enregistrement existant.
+         * @param {string} docId - L'ID du document Firestore.
+         * @param {Object} rechargeData - Les données de la recharge.
+         */
+        function modifierRecharge(docId, rechargeData) {
+            // 1. Pré-remplir le formulaire
+            rechargeIdInput.value = docId;
+            montantInput.value = rechargeData.montant;
+            dateAchatInput.value = rechargeData.date;
+            isFirstRechargeCheckbox.checked = rechargeData.isFirst;
+
+            // 2. Mettre le formulaire en mode modification
+            formTitle.textContent = 'Modifier';
+            submitBtn.textContent = 'Mettre à jour la Recharge';
+            submitBtn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+            submitBtn.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // Remonter en haut de page
+        }
+
+        /**
+         * Gère la soumission du formulaire (création ou modification).
+         */
+        rechargeForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            if (!isAuthReady) {
+                showAlert("Erreur de connexion : Veuillez attendre l'authentification.");
+                return;
+            }
+
+            const docId = rechargeIdInput.value;
+            const montant = parseFloat(montantInput.value);
+            const dateAchat = dateAchatInput.value;
+            const isFirst = isFirstRechargeCheckbox.checked;
+
+            if (isNaN(montant) || montant <= 0 || !dateAchat) {
+                showAlert('Veuillez saisir un montant valide et une date.');
+                return;
+            }
+
+            const kwhRecharge = calculerRecharge(montant, isFirst);
+            const rechargeData = {
+                date: dateAchat,
+                montant: montant,
+                kwh: kwhRecharge,
+                isFirst: isFirst
+            };
+
+            try {
+                if (docId) {
+                    // --- MODE MODIFICATION (Mise à jour) ---
+                    const docRef = doc(getCollectionRef(), docId);
+                    await updateDoc(docRef, rechargeData);
+                    showAlert('Recharge mise à jour avec succès!');
+                    
+                } else {
+                    // --- MODE CRÉATION (Ajout) ---
+                    await addDoc(getCollectionRef(), rechargeData);
+                    showAlert('Nouvelle recharge enregistrée avec succès!');
+                }
+            } catch (error) {
+                console.error("Erreur lors de la sauvegarde/mise à jour:", error);
+                showAlert("Erreur de sauvegarde: " + error.message);
+                return;
+            }
+            
+            // Nettoyage du formulaire et réinitialisation du mode
+            rechargeForm.reset();
+            rechargeIdInput.value = '';
+            formTitle.textContent = 'Enregistrer';
+            submitBtn.textContent = 'Enregistrer la Recharge';
+            submitBtn.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+            submitBtn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+            dateAchatInput.value = new Date().toISOString().split('T')[0];
+        });
+
+        /**
+         * Supprime un document de recharge.
+         * @param {string} docId - L'ID du document Firestore à supprimer.
+         */
+        async function supprimerRecharge(docId) {
+            const confirmed = await showConfirmModal('Êtes-vous sûr de vouloir supprimer cette recharge ?');
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const docRef = doc(getCollectionRef(), docId);
+                await deleteDoc(docRef);
+                showAlert('Recharge supprimée.');
+            } catch (error) {
+                console.error("Erreur lors de la suppression:", error);
+                showAlert("Erreur de suppression: " + error.message);
+            }
+        }
+
+        /**
+         * Réinitialise toutes les données de l'utilisateur.
+         */
+        resetDataButton.addEventListener('click', async function() {
+            const confirmed = await showConfirmModal("ATTENTION : Voulez-vous vraiment effacer TOUTES les données de recharge ? Cette action est irréversible.");
+            if (!confirmed) {
+                return;
+            }
+
+            // Récupère tous les documents pour les supprimer un par un (Pas de suppression de collection en masse dans la version web)
+            try {
+                const q = query(getCollectionRef());
+                const snapshot = await getDocs(q);
+                
+                let deleteCount = 0;
+                const deletePromises = [];
+
+                snapshot.forEach((docSnap) => {
+                    deletePromises.push(deleteDoc(doc(getCollectionRef(), docSnap.id)));
+                    deleteCount++;
+                });
+
+                await Promise.all(deletePromises);
+                showAlert(`Toutes les ${deleteCount} recharges ont été réinitialisées.`);
+
+            } catch (error) {
+                console.error("Erreur lors de la réinitialisation:", error);
+                showAlert("Erreur de réinitialisation: " + error.message);
+            }
+        });
+
+
+        // --- Initialisation Firebase et Listeners ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Définit la date du jour par défaut dans le formulaire
+            dateAchatInput.value = new Date().toISOString().split('T')[0];
+            
+            // Initialisation Firebase
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            } catch (error) {
+                console.error("Erreur d'initialisation de Firebase:", error);
+                showAlert("Erreur: Impossible d'initialiser l'application Firebase.");
+                return;
+            }
+
+            // Gestion de l'authentification
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    userIdDisplay.textContent = userId;
+                    startRealtimeListener();
+                } else {
+                    // Tente de s'authentifier
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Erreur d'authentification:", error);
+                        userIdDisplay.textContent = "Échec de l'auth";
+                        isAuthReady = true; // Permet aux autres parties de l'UI de charger même si les données ne fonctionnent pas
+                    }
+                }
+            });
+        });
+
+        /**
+         * Démarre l'écoute en temps réel de la collection de recharges.
+         */
+        function startRealtimeListener() {
+            if (!db || !userId) return;
+
+            const colRef = getCollectionRef();
+            // Requête pour trier par date décroissante
+            const q = query(colRef, orderBy("date", "desc")); 
+
+            onSnapshot(q, (snapshot) => {
+                const recharges = [];
+                snapshot.forEach((doc) => {
+                    recharges.push({ id: doc.id, ...doc.data() });
+                });
+                // Les données sont déjà triées par la requête Firestore
+                mettreAJourUI(recharges);
+            }, (error) => {
+                console.error("Erreur lors de l'écoute des données Firestore:", error);
+                rechargesList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Erreur de chargement des données.</td></tr>';
+            });
+        }
+
+    </script>
+</body>
+</html>
