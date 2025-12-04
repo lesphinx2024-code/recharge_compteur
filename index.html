@@ -7,7 +7,7 @@
     <!-- Utilisation de Tailwind CSS pour la modernisation du style -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Styles de base adaptés de style.css et convertis pour Tailwind */
+        /* Styles de base adaptés pour le responsive et l'esthétique */
         :root {
             --primary-color: #3b82f6; /* Blue-500 */
             --secondary-color: #10b981; /* Emerald-500 */
@@ -213,21 +213,23 @@
         // Importations Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, addDoc, setDoc, deleteDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Activer le logging pour le debug
-        // setLogLevel('debug');
+        // setLogLevel('debug'); 
 
         // --- Configuration Firebase Globale ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // Le parse JSON est sécurisé ici pour gérer le cas où la variable n'est pas une chaîne JSON valide, bien que non nécessaire dans cet environnement.
+        const firebaseConfig = JSON.parse(typeof __firebase_config === 'string' && __firebase_config ? __firebase_config : '{}'); 
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let db = null;
         let auth = null;
         let userId = null;
         let isAuthReady = false;
+        let hasAuthAttempted = false; // NOUVEAU: Pour contrôler l'exécution unique de la tentative d'authentification
 
         // --- Constantes et Configuration Métier ---
         const TAUX_KWH = 93.45;
@@ -262,13 +264,8 @@
         const alertCloseBtn = document.getElementById('alertCloseBtn');
 
 
-        // --- Fonctions d'Utilité UI ---
+        // --- Fonctions d'Utilité UI (inchangées) ---
 
-        /**
-         * Affiche un modal de confirmation personnalisé.
-         * @param {string} message - Message à afficher.
-         * @returns {Promise<boolean>} Résout à true si confirmé, false sinon.
-         */
         function showConfirmModal(message) {
             return new Promise(resolve => {
                 modalMessage.textContent = message;
@@ -293,10 +290,6 @@
             });
         }
         
-        /**
-         * Affiche un modal d'alerte personnalisé.
-         * @param {string} message - Message à afficher.
-         */
         function showAlert(message) {
              alertMessage.textContent = message;
              alertModal.style.display = 'flex';
@@ -306,14 +299,8 @@
         }
 
 
-        // --- Logique de Calcul Simplifiée ---
+        // --- Logique de Calcul Simplifiée (inchangée) ---
 
-        /**
-         * Calcule la quantité de KWh rechargée selon les règles métier.
-         * @param {number} montant - Le montant de l'achat en FCFA.
-         * @param {boolean} isFirst - Vrai si c'est la première recharge du mois (applique les frais).
-         * @returns {number} La quantité de KWh.
-         */
         function calculerRecharge(montant, isFirst) {
             const kwhBrut = montant / TAUX_KWH;
             let kwhNet;
@@ -330,33 +317,22 @@
             return Math.max(0, parseFloat(kwhNet.toFixed(2))); 
         }
 
-        // --- Gestion des Données Firestore ---
+        // --- Gestion des Données Firestore (inchangée) ---
 
-        /**
-         * Référence à la collection privée de l'utilisateur.
-         */
         function getCollectionRef() {
             // Chemin: /artifacts/{appId}/users/{userId}/recharges
             if (!db || !userId) return null;
             return collection(db, 'artifacts', appId, 'users', userId, COLLECTION_NAME);
         }
 
-        /**
-         * Met à jour l'interface utilisateur (Historique, Bilans)
-         * @param {Array<Object>} recharges - Liste des recharges triées.
-         */
         function mettreAJourUI(recharges) {
             afficherRecharges(recharges);
             afficherBilanMensuel(recharges);
             afficherBilanAnnuel(recharges);
         }
 
-        // --- Fonctions de Rendu (Affichage) ---
+        // --- Fonctions de Rendu (Affichage) (inchangées) ---
 
-        /**
-         * Affiche la liste des recharges dans le tableau.
-         * @param {Array<Object>} recharges - Liste des recharges.
-         */
         function afficherRecharges(recharges) {
             rechargesList.innerHTML = ''; 
 
@@ -369,7 +345,6 @@
                 const row = rechargesList.insertRow();
                 row.classList.add('hover:bg-gray-50');
 
-                // Utiliser la propriété `id` de Firestore comme `docId`
                 const docId = recharge.id; 
                 
                 // Ajout T00:00:00 pour éviter décalage UTC
@@ -402,10 +377,6 @@
             });
         }
 
-        /**
-         * Affiche le bilan du mois en cours.
-         * @param {Array<Object>} recharges - Liste des recharges.
-         */
         function afficherBilanMensuel(recharges) {
             const aujourdHui = new Date();
             const moisActuel = aujourdHui.getMonth();
@@ -425,10 +396,6 @@
             totalKwhMensuelEl.textContent = `${totalKwh.toFixed(2)} kWh`;
         }
 
-        /**
-         * Affiche le bilan annuel par mois.
-         * @param {Array<Object>} recharges - Liste des recharges.
-         */
         function afficherBilanAnnuel(recharges) {
             bilanAnnuelTableBody.innerHTML = '';
 
@@ -461,13 +428,8 @@
         }
 
 
-        // --- Fonctions d'Action Firestore ---
+        // --- Fonctions d'Action Firestore (inchangées) ---
 
-        /**
-         * Prépare le formulaire pour modifier un enregistrement existant.
-         * @param {string} docId - L'ID du document Firestore.
-         * @param {Object} rechargeData - Les données de la recharge.
-         */
         function modifierRecharge(docId, rechargeData) {
             // 1. Pré-remplir le formulaire
             rechargeIdInput.value = docId;
@@ -483,9 +445,6 @@
             window.scrollTo({ top: 0, behavior: 'smooth' }); // Remonter en haut de page
         }
 
-        /**
-         * Gère la soumission du formulaire (création ou modification).
-         */
         rechargeForm.addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -540,10 +499,6 @@
             dateAchatInput.value = new Date().toISOString().split('T')[0];
         });
 
-        /**
-         * Supprime un document de recharge.
-         * @param {string} docId - L'ID du document Firestore à supprimer.
-         */
         async function supprimerRecharge(docId) {
             const confirmed = await showConfirmModal('Êtes-vous sûr de vouloir supprimer cette recharge ?');
             if (!confirmed) {
@@ -560,16 +515,12 @@
             }
         }
 
-        /**
-         * Réinitialise toutes les données de l'utilisateur.
-         */
         resetDataButton.addEventListener('click', async function() {
             const confirmed = await showConfirmModal("ATTENTION : Voulez-vous vraiment effacer TOUTES les données de recharge ? Cette action est irréversible.");
             if (!confirmed) {
                 return;
             }
 
-            // Récupère tous les documents pour les supprimer un par un (Pas de suppression de collection en masse dans la version web)
             try {
                 const q = query(getCollectionRef());
                 const snapshot = await getDocs(q);
@@ -592,7 +543,7 @@
         });
 
 
-        // --- Initialisation Firebase et Listeners ---
+        // --- Initialisation Firebase et Listeners (LOGIQUE CORRIGÉE) ---
 
         document.addEventListener('DOMContentLoaded', () => {
             // Définit la date du jour par défaut dans le formulaire
@@ -609,26 +560,44 @@
                 return;
             }
 
-            // Gestion de l'authentification
+            // Gestion de l'authentification (LOGIQUE CORRIGÉE)
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
+                    // CAS 1: Utilisateur connecté (après connexion ou initial)
+                    console.log("AuthStateChanged: Utilisateur trouvé. UID:", user.uid);
                     userId = user.uid;
                     isAuthReady = true;
                     userIdDisplay.textContent = userId;
                     startRealtimeListener();
-                } else {
-                    // Tente de s'authentifier
+                } else if (!hasAuthAttempted) {
+                    // CAS 2: Pas d'utilisateur (premier chargement), tentative de connexion
+                    hasAuthAttempted = true;
+                    console.log("AuthStateChanged: Pas d'utilisateur. Tentative de connexion...");
+                    userIdDisplay.textContent = "Tentative d'authentification...";
                     try {
                         if (initialAuthToken) {
                             await signInWithCustomToken(auth, initialAuthToken);
+                            console.log("signIn: Tentative par Custom Token.");
                         } else {
                             await signInAnonymously(auth);
+                            console.log("signIn: Tentative Anonyme.");
                         }
+                        // Le succès de signIn déclenche un nouveau onAuthStateChanged (CAS 1)
                     } catch (error) {
-                        console.error("Erreur d'authentification:", error);
-                        userIdDisplay.textContent = "Échec de l'auth";
-                        isAuthReady = true; // Permet aux autres parties de l'UI de charger même si les données ne fonctionnent pas
+                        // Si la tentative échoue (Custom Token invalide, etc.)
+                        console.error("Échec de la tentative d'authentification.", error);
+                        userIdDisplay.textContent = "Erreur d'authentification";
+                        // On débloque l'application même en cas d'échec pour ne pas rester bloqué
+                        isAuthReady = true;
+                        showAlert("Erreur critique d'authentification. L'application ne peut pas charger les données.");
                     }
+                } else {
+                    // CAS 3: Utilisateur déconnecté après une tentative ratée (ou déconnexion explicite)
+                    console.warn("AuthStateChanged: Utilisateur déconnecté ou échec d'authentification après tentative.");
+                    userIdDisplay.textContent = "Authentification échouée.";
+                    isAuthReady = true; 
+                    // On peut laisser la liste vide
+                    rechargesList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Authentification échouée. Impossible de charger les données.</td></tr>';
                 }
             });
         });
@@ -637,13 +606,17 @@
          * Démarre l'écoute en temps réel de la collection de recharges.
          */
         function startRealtimeListener() {
-            if (!db || !userId) return;
+            if (!db || !userId) {
+                console.error("startRealtimeListener: DB ou UserID manquant.");
+                return;
+            }
 
             const colRef = getCollectionRef();
             // Requête pour trier par date décroissante
             const q = query(colRef, orderBy("date", "desc")); 
 
             onSnapshot(q, (snapshot) => {
+                console.log("Firestore Snapshot reçu. Mise à jour de l'UI.");
                 const recharges = [];
                 snapshot.forEach((doc) => {
                     recharges.push({ id: doc.id, ...doc.data() });
@@ -652,7 +625,7 @@
                 mettreAJourUI(recharges);
             }, (error) => {
                 console.error("Erreur lors de l'écoute des données Firestore:", error);
-                rechargesList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Erreur de chargement des données.</td></tr>';
+                rechargesList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Erreur de chargement des données. Vérifiez votre connexion.</td></tr>';
             });
         }
 
